@@ -14,7 +14,11 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function linkedInShareUrl(url: string): string {
+export function linkedInShareUrl(url: string, text?: string): string {
+  if (text) {
+    const fullText = `${text}\n\n${url}`;
+    return `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(fullText)}`;
+  }
   return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
 }
 

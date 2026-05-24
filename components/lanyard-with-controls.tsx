@@ -10,7 +10,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Download, Video, Link as LinkIcon, Check, Loader2, ChevronDown, MousePointer2 } from "lucide-react";
+import { Download, Video, Link as LinkIcon, Check, Loader2, ChevronDown, RotateCcw } from "lucide-react";
 import { parseParams, serializeParams, TRACKS, type Track } from "@/lib/lanyard-params";
 import {
   getCanonicalUrl,
@@ -35,6 +35,41 @@ function LinkedInIcon({ className }: { className?: string }) {
   );
 }
 
+function BorderBeam({ duration = 1.5 }: { duration?: number }) {
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 rounded-[inherit] z-10"
+      style={{
+        overflow: "hidden",
+        padding: 1,
+        WebkitMask:
+          "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+        WebkitMaskComposite: "xor",
+        mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+        maskComposite: "exclude",
+      } as React.CSSProperties}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: "300%",
+          aspectRatio: "1",
+          marginLeft: "-150%",
+          marginTop: "-150%",
+          background:
+            "conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(255,255,255,0.03) 290deg, rgba(255,255,255,0.15) 320deg, rgba(255,255,255,0.4) 345deg, rgba(255,255,255,0.7) 360deg)",
+          animationName: "beam-spin",
+          animationDuration: `${duration}s`,
+          animationTimingFunction: "linear",
+          animationFillMode: "both",
+        }}
+      />
+    </div>
+  );
+}
+
 function pickMime(): string {
   const candidates = [
     "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
@@ -47,6 +82,13 @@ function pickMime(): string {
 
 function fileExt(mime: string): string {
   return mime.startsWith("video/mp4") ? "mp4" : "webm";
+}
+
+function makeSlug(name: string): string {
+  return (name || "lanyard")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
 }
 
 const MAX_CHARS = 32;
@@ -80,12 +122,12 @@ export default function LanyardWithControls({
   const [recording, setRecording] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
-  const [mouseFollow, setMouseFollow] = useState(false);
   const [videoSpin, setVideoSpin] = useState(false);
+  const [captureBack, setCaptureBack] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const isBusy = recording || countdown !== null;
+  const isBusy = recording || countdown !== null || captureBack;
 
   const syncUrl = useCallback(
     (f: typeof fields) => {
@@ -98,19 +140,30 @@ export default function LanyardWithControls({
     [router]
   );
 
-  const handleExport = () => {
+  const handleFrontExport = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dataUrl = canvas.toDataURL("image/png");
-    const slug = (appliedFields.name || "lanyard")
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
     const a = document.createElement("a");
     a.href = dataUrl;
-    a.download = `cursor-ttw-lanyard-${slug}.png`;
+    a.download = `cursor-ttw-lanyard-${makeSlug(appliedFields.name)}-front.png`;
     a.click();
   };
+
+  const handleBackExport = useCallback(async () => {
+    if (isBusy) return;
+    setCaptureBack(true);
+    await new Promise((r) => setTimeout(r, 400));
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const dataUrl = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `cursor-ttw-lanyard-${makeSlug(appliedFields.name)}-back.png`;
+      a.click();
+    }
+    setCaptureBack(false);
+  }, [isBusy, appliedFields.name]);
 
   const handleApply = () => {
     setAppliedFields({ ...fields });
@@ -165,14 +218,10 @@ export default function LanyardWithControls({
       recorder.stop();
 
       const blob = await done;
-      const slug = (appliedFields.name || "lanyard")
-        .toLowerCase()
-        .replace(/\s+/g, "-")
-        .replace(/[^a-z0-9-]/g, "");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `cursor-ttw-lanyard-${slug}.${fileExt(mime)}`;
+      a.download = `cursor-ttw-lanyard-${makeSlug(appliedFields.name)}.${fileExt(mime)}`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -192,7 +241,7 @@ export default function LanyardWithControls({
 
   const shareUrl = getCanonicalUrl(appliedFields);
   const shareText =
-    "I'm building at the Cursor Hackathon during Toronto Tech Week. Check out my lanyard";
+    "I'm building at the Cursor Hackathon during Toronto Tech Week. Check out my lanyard\n\nDon't forget to tag the creator of the project @Haaris Sadiq";
 
   const handleCopy = async () => {
     const ok = await copyToClipboard(shareUrl);
@@ -202,6 +251,65 @@ export default function LanyardWithControls({
     }
   };
 
+  const [activeBeam, setActiveBeam] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isBusy) {
+      setActiveBeam(null);
+      return;
+    }
+
+    let targets: string[];
+    if (hasChanges) {
+      targets = ["apply"];
+    } else if (!fields.name) {
+      targets = ["name"];
+      if (!fields.track) targets.push("track");
+      if (!fields.tagline) targets.push("tagline");
+    } else {
+      targets = ["export-section", "share-buttons"];
+    }
+
+    let cancelled = false;
+    const BEAM_MS = 1500;
+    const GAP_MS = 200;
+    const CYCLE_WAIT_MS = 20_000;
+    const INITIAL_DELAY_MS = 5_000;
+
+    async function cycle() {
+      await new Promise((r) => setTimeout(r, INITIAL_DELAY_MS));
+      while (!cancelled) {
+        for (let i = 0; i < targets.length; i++) {
+          if (cancelled) return;
+          setActiveBeam(targets[i]);
+          await new Promise((r) => setTimeout(r, BEAM_MS));
+          if (cancelled) return;
+          setActiveBeam(null);
+          if (i < targets.length - 1) {
+            await new Promise((r) => setTimeout(r, GAP_MS));
+          }
+        }
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, CYCLE_WAIT_MS));
+      }
+    }
+
+    cycle();
+    return () => {
+      cancelled = true;
+      setActiveBeam(null);
+    };
+  }, [
+    hasChanges,
+    fields.name,
+    fields.track,
+    fields.tagline,
+    isBusy,
+  ]);
+
+  const actionBtnClass =
+    "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-[#2a2a2f] font-mono text-xs text-[#8a8a92] transition-colors hover:border-white/20 hover:text-[#ededf0] disabled:opacity-50";
+
   return (
     <div className="relative h-full w-full">
       <Lanyard
@@ -210,9 +318,9 @@ export default function LanyardWithControls({
         canvasRef={canvasRef}
         textFields={appliedFields}
         resetKey={resetKey}
-        mouseFollow={mouseFollow}
         videoSpin={videoSpin}
         recording={isBusy}
+        captureBack={captureBack}
       />
 
       {countdown !== null && (
@@ -241,22 +349,25 @@ export default function LanyardWithControls({
           </label>
 
           <div className="flex flex-col gap-2">
-            <input
-              type="text"
-              value={fields.name}
-              onChange={(e) => {
-                if (e.target.value.length > MAX_CHARS) return;
-                setFields((prev) => ({ ...prev, name: e.target.value }));
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="Name *"
-              maxLength={MAX_CHARS}
-              aria-label="Name"
-              disabled={isBusy}
-              className="h-10 w-full rounded-md border border-[#2a2a2f] bg-[#1c1c20] px-3 py-2 font-mono text-sm text-[#ededf0] placeholder:text-[#5a5a62] focus:outline-none focus:ring-1 focus:ring-white/30 disabled:opacity-50"
-            />
+            <div className="relative rounded-md">
+              <input
+                type="text"
+                value={fields.name}
+                onChange={(e) => {
+                  if (e.target.value.length > MAX_CHARS) return;
+                  setFields((prev) => ({ ...prev, name: e.target.value }));
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Name *"
+                maxLength={MAX_CHARS}
+                aria-label="Name"
+                disabled={isBusy}
+                className="h-10 w-full rounded-md border border-[#2a2a2f] bg-[#1c1c20] px-3 py-2 font-mono text-sm text-[#ededf0] placeholder:text-[#5a5a62] focus:outline-none focus:ring-1 focus:ring-white/30 disabled:opacity-50"
+              />
+              {activeBeam === "name" && <BorderBeam />}
+            </div>
 
-            <div className="relative">
+            <div className="relative rounded-md">
               <select
                 value={fields.track}
                 onChange={(e) =>
@@ -279,172 +390,179 @@ export default function LanyardWithControls({
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5a5a62]" />
+              {activeBeam === "track" && <BorderBeam />}
             </div>
 
-            <input
-              type="text"
-              value={fields.tagline}
-              onChange={(e) => {
-                if (e.target.value.length > MAX_CHARS) return;
-                setFields((prev) => ({ ...prev, tagline: e.target.value }));
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="@handle, company, school..."
-              maxLength={MAX_CHARS}
-              aria-label="Custom text"
-              disabled={isBusy}
-              className="h-10 w-full rounded-md border border-[#2a2a2f] bg-[#1c1c20] px-3 py-2 font-mono text-sm text-[#ededf0] placeholder:text-[#5a5a62] focus:outline-none focus:ring-1 focus:ring-white/30 disabled:opacity-50"
-            />
+            <div className="relative rounded-md">
+              <input
+                type="text"
+                value={fields.tagline}
+                onChange={(e) => {
+                  if (e.target.value.length > MAX_CHARS) return;
+                  setFields((prev) => ({ ...prev, tagline: e.target.value }));
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="@handle, company, school..."
+                maxLength={MAX_CHARS}
+                aria-label="Custom text"
+                disabled={isBusy}
+                className="h-10 w-full rounded-md border border-[#2a2a2f] bg-[#1c1c20] px-3 py-2 font-mono text-sm text-[#ededf0] placeholder:text-[#5a5a62] focus:outline-none focus:ring-1 focus:ring-white/30 disabled:opacity-50"
+              />
+              {activeBeam === "tagline" && <BorderBeam />}
+            </div>
           </div>
 
           <button
             onClick={handleApply}
             disabled={!hasChanges || isBusy}
-            className="mt-3 flex h-10 w-full items-center justify-center rounded-md bg-white font-mono text-sm font-medium text-[#131315] transition-colors hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`mt-3 flex h-10 w-full items-center justify-center rounded-md bg-white font-mono text-sm font-medium text-[#131315] transition-colors hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed ${
+              activeBeam === "apply"
+                ? "animate-[apply-pulse_1.2s_ease-in-out]"
+                : ""
+            }`}
           >
             Apply
           </button>
 
-          <TooltipProvider delayDuration={300}>
-            <div className="mt-3">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => setMouseFollow((prev) => !prev)}
-                    disabled={isBusy}
-                    className={`flex h-9 w-full items-center justify-center gap-2 rounded-md border font-mono text-xs transition-colors disabled:opacity-50 ${
-                      mouseFollow
-                        ? "border-white/30 bg-white/10 text-[#ededf0]"
-                        : "border-[#2a2a2f] text-[#8a8a92] hover:border-white/20 hover:text-[#ededf0]"
-                    }`}
-                  >
-                    <MousePointer2 className="h-3.5 w-3.5" />
-                    <span>Cursor Follow {mouseFollow ? "On" : "Off"}</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>Card rotates to follow your cursor position</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
+          <div className="relative mt-4 rounded-lg border-t border-[#2a2a2f]/60 pt-4">
+            {activeBeam === "export-section" && <BorderBeam />}
 
-            <div className="mt-2 flex gap-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={handleExport}
-                    disabled={isBusy}
-                    className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-[#2a2a2f] font-mono text-xs text-[#8a8a92] transition-colors hover:border-white/20 hover:text-[#ededf0] disabled:opacity-50"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Download PNG</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>Save a screenshot of your lanyard</p>
-                </TooltipContent>
-              </Tooltip>
+            <span className="mb-3 block font-mono text-[10px] font-medium uppercase tracking-widest text-[#5a5a62]">
+              Export & Share
+            </span>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={handleRecord}
-                    disabled={isBusy}
-                    className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-[#2a2a2f] font-mono text-xs text-[#8a8a92] transition-colors hover:border-white/20 hover:text-[#ededf0] disabled:opacity-50"
-                  >
-                    {recording ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        <span>Recording...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Video className="h-3.5 w-3.5" />
-                        <span>Download Video</span>
-                      </>
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>Record a video with entrance animation and 360 spin</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </TooltipProvider>
+            <TooltipProvider delayDuration={300}>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={handleFrontExport}
+                        disabled={isBusy}
+                        className={actionBtnClass}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>Front</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>Download front of card as PNG</p>
+                    </TooltipContent>
+                  </Tooltip>
 
-          {appliedFields.name && (
-            <div className="mt-4 flex items-center gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-widest text-[#5a5a62]">
-                Share
-              </span>
-              <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={handleBackExport}
+                        disabled={isBusy}
+                        className={actionBtnClass}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        <span>Back</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>Flip card and download back as PNG</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      onClick={() =>
-                        window.open(
-                          xShareUrl(shareUrl, shareText),
-                          "_blank",
-                          "noopener,noreferrer"
-                        )
-                      }
-                      variant="outline"
-                      size="icon"
+                    <button
+                      onClick={handleRecord}
                       disabled={isBusy}
-                      className="h-7 w-7 shrink-0 border-[#2a2a2f] text-[#8a8a92] hover:border-white/20 hover:text-[#ededf0]"
+                      className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-[#2a2a2f] font-mono text-xs text-[#8a8a92] transition-colors hover:border-white/20 hover:text-[#ededf0] disabled:opacity-50"
                     >
-                      <XIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent><p>Share on X</p></TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={() =>
-                        window.open(
-                          linkedInShareUrl(shareUrl),
-                          "_blank",
-                          "noopener,noreferrer"
-                        )
-                      }
-                      variant="outline"
-                      size="icon"
-                      disabled={isBusy}
-                      className="h-7 w-7 shrink-0 border-[#2a2a2f] text-[#8a8a92] hover:border-white/20 hover:text-[#ededf0]"
-                    >
-                      <LinkedInIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent><p>Share on LinkedIn</p></TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={handleCopy}
-                      variant="outline"
-                      size="icon"
-                      disabled={isBusy}
-                      className="h-7 w-7 shrink-0 border-[#2a2a2f] text-[#8a8a92] hover:border-white/20 hover:text-[#ededf0]"
-                    >
-                      {copied ? (
-                        <Check className="h-3.5 w-3.5 text-green-500" />
+                      {recording ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Recording...</span>
+                        </>
                       ) : (
-                        <LinkIcon className="h-3.5 w-3.5" />
+                        <>
+                          <Video className="h-3.5 w-3.5" />
+                          <span>Record Video</span>
+                        </>
                       )}
-                    </Button>
+                    </button>
                   </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{copied ? "Copied!" : "Copy link"}</p>
+                  <TooltipContent side="top">
+                    <p>Record entrance animation with 360 spin</p>
                   </TooltipContent>
                 </Tooltip>
-              </TooltipProvider>
-            </div>
-          )}
+
+                <div className="flex items-center gap-2 border-t border-[#2a2a2f]/40 pt-3 mt-1">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-[#5a5a62]">
+                    Share
+                  </span>
+                  <div className="relative flex items-center gap-1 rounded-lg px-1 py-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() =>
+                            window.open(
+                              xShareUrl(shareUrl, shareText),
+                              "_blank",
+                              "noopener,noreferrer"
+                            )
+                          }
+                          variant="outline"
+                          size="icon"
+                          disabled={isBusy}
+                          className="h-7 w-7 shrink-0 border-[#2a2a2f] text-[#8a8a92] hover:border-white/20 hover:text-[#ededf0]"
+                        >
+                          <XIcon className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent><p>Share on X</p></TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={() =>
+                            window.open(
+                              linkedInShareUrl(shareUrl, shareText),
+                              "_blank",
+                              "noopener,noreferrer"
+                            )
+                          }
+                          variant="outline"
+                          size="icon"
+                          disabled={isBusy}
+                          className="h-7 w-7 shrink-0 border-[#2a2a2f] text-[#8a8a92] hover:border-white/20 hover:text-[#ededf0]"
+                        >
+                          <LinkedInIcon className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent><p>Share on LinkedIn</p></TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          onClick={handleCopy}
+                          variant="outline"
+                          size="icon"
+                          disabled={isBusy}
+                          className="h-7 w-7 shrink-0 border-[#2a2a2f] text-[#8a8a92] hover:border-white/20 hover:text-[#ededf0]"
+                        >
+                          {copied ? (
+                            <Check className="h-3.5 w-3.5 text-green-500" />
+                          ) : (
+                            <LinkIcon className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{copied ? "Copied!" : "Copy link"}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    {activeBeam === "share-buttons" && <BorderBeam />}
+                  </div>
+                </div>
+              </div>
+            </TooltipProvider>
+          </div>
         </div>
       </div>
     </div>

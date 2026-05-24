@@ -1,10 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import React from "react";
+import { Check, Link as LinkIcon } from "lucide-react";
 
 export const HeroHeader = () => {
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
   return (
     <header>
       <nav className="fixed z-50 w-full">
@@ -29,29 +40,22 @@ export const HeroHeader = () => {
               TTW
             </span>
           </Link>
-          <Link
-            href="https://luma.com/11fprizv"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={handleShare}
             className="group flex items-center gap-1.5 rounded-full border border-white/[0.08] px-4 py-1.5 font-mono text-[11px] uppercase tracking-widest text-[#8a8a92] transition-all hover:border-white/20 hover:text-[#ededf0]"
           >
-            Register
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 16 16"
-              fill="none"
-              className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
-            >
-              <path
-                d="M6 3h7v7M13 3L3 13"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </Link>
+            {copied ? (
+              <>
+                Copied
+                <Check className="h-3 w-3 text-green-500" />
+              </>
+            ) : (
+              <>
+                Share
+                <LinkIcon className="h-3 w-3 transition-transform group-hover:scale-110" />
+              </>
+            )}
+          </button>
         </div>
       </nav>
     </header>

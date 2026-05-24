@@ -45,20 +45,33 @@ export default function FooterSection() {
             Cursor
           </Link>
           <span className="text-[#2a2a2f]">·</span>
-          <span className="font-mono text-[10px] text-[#4a4a52]">Built by</span>
+          <span className="font-mono text-[11px] text-[#5a5a62]">Built by</span>
           <Link
             href="https://www.linkedin.com/in/haarissadiq/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-0.5 font-mono text-[11px] text-white transition-colors hover:text-white/80"
+            className="group relative inline-flex items-center gap-1 font-mono text-sm text-white transition-colors hover:text-white/80"
           >
-            Haaris Sadiq
-            <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <span className="relative">
+              <span className="relative z-10 bg-gradient-to-r from-white via-white/30 to-white bg-[length:200%_100%] bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]">
+                Haaris Sadiq
+              </span>
+            </span>
+            <svg
+              className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M3.5 8.5L8.5 3.5M8.5 3.5H4.5M8.5 3.5V7.5" />
             </svg>
           </Link>
         </div>
       </div>
+
     </footer>
   );
 }

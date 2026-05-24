@@ -6,6 +6,7 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { HeroHeader } from "@/components/header";
 import FooterSection from "@/components/footer";
+import Loader from "@/components/loader";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({
@@ -25,10 +26,7 @@ export const metadata: Metadata = {
   description:
     "400+ builders. Workshops, hackathon, panels & networking. Join Canada's largest Cursor event during Toronto Tech Week, May 27 2026.",
   icons: {
-    icon: [
-      { url: "/icon-dark-32x32.png", media: "(prefers-color-scheme: light)" },
-      { url: "/icon-dark-32x32.png", media: "(prefers-color-scheme: dark)" },
-    ],
+    icon: "/favicon.png",
   },
   openGraph: {
     title: "Cursor × Toronto Tech Week — Canada's Largest Cursor Event",
@@ -57,6 +55,7 @@ export default function RootLayout({
       className={`dark ${geist.variable} ${geistMono.variable} ${jetbrainsMono.variable}`}
     >
       <body className="font-sans antialiased bg-[#131315] text-[#ededf0] flex flex-col h-dvh">
+        <Loader />
         <HeroHeader />
         <main className="flex-1 min-h-0 flex flex-col overflow-x-hidden">{children}</main>
         <FooterSection />

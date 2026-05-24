@@ -78,6 +78,49 @@
   --color-hairline: #2a2a2f;
 }
 
+@keyframes beam-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0%, 100% { background-position: 200% center; }
+  50% { background-position: 0% center; }
+}
+
+@keyframes apply-pulse {
+  0%, 100% { transform: scale(1); box-shadow: none; }
+  20% { transform: scale(0.96); }
+  45% { transform: scale(1.02); box-shadow: 0 0 15px 3px rgba(255,255,255,0.15); }
+  70% { transform: scale(1); box-shadow: 0 0 5px 1px rgba(255,255,255,0.05); }
+}
+
+@keyframes loader-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loader-fill {
+  0%   { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+.loader-logo {
+  animation: loader-fade-up 0.6s ease-out 0.1s forwards;
+}
+
+.loader-title {
+  animation: loader-fade-up 0.5s ease-out 0.4s forwards;
+}
+
+.loader-subtitle {
+  animation: loader-fade-up 0.5s ease-out 0.65s forwards;
+}
+
+.loader-bar {
+  animation: loader-fade-up 0.4s ease-out 0.9s forwards;
+}
+
 html {
   scroll-behavior: smooth;
 }

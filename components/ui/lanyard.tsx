@@ -1,4 +1,3 @@
-/* eslint-disable react/no-unknown-property */
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Canvas, extend, useFrame } from '@react-three/fiber';
@@ -38,9 +37,9 @@ interface LanyardProps {
   canvasRef?: React.RefObject<HTMLCanvasElement | null>;
   textFields?: TextFields;
   resetKey?: number;
-  mouseFollow?: boolean;
   videoSpin?: boolean;
   recording?: boolean;
+  captureBack?: boolean;
 }
 
 export default function Lanyard({
@@ -52,10 +51,22 @@ export default function Lanyard({
   canvasRef,
   textFields,
   resetKey = 0,
-  mouseFollow = false,
   videoSpin = false,
   recording = false,
+  captureBack = false,
 }: LanyardProps) {
+  const [physicsReady, setPhysicsReady] = useState(false);
+
+  useEffect(() => {
+    if ((window as any).__loaderComplete) {
+      setPhysicsReady(true);
+      return;
+    }
+    const handleLoaderComplete = () => setPhysicsReady(true);
+    window.addEventListener("loader-complete", handleLoaderComplete);
+    return () => window.removeEventListener("loader-complete", handleLoaderComplete);
+  }, []);
+
   return (
     <div
       className={clsx(
@@ -77,13 +88,14 @@ export default function Lanyard({
           key={resetKey}
           gravity={gravity}
           timeStep={1 / 60}
+          paused={!physicsReady}
         >
           <Band
             textFields={textFields}
             resetKey={resetKey}
-            mouseFollow={mouseFollow}
             videoSpin={videoSpin}
             recording={recording}
+            captureBack={captureBack}
           />
         </Physics>
         <Environment blur={0.75}>
@@ -126,9 +138,9 @@ interface BandProps {
   minSpeed?: number;
   textFields?: TextFields;
   resetKey?: number;
-  mouseFollow?: boolean;
   videoSpin?: boolean;
   recording?: boolean;
+  captureBack?: boolean;
 }
 
 function Band({
@@ -136,9 +148,9 @@ function Band({
   minSpeed = 0,
   textFields,
   resetKey = 0,
-  mouseFollow = false,
   videoSpin = false,
   recording = false,
+  captureBack = false,
 }: BandProps) {
   const bandMesh = useRef<any>(null);
   const fixedBody = useRef<any>(null);
@@ -213,29 +225,124 @@ function Band({
       const leftX = margin;
       const scale = w / 1204;
       const nameY = Math.round(h * 0.68);
+      const fontFamily = '"JetBrains Mono", monospace';
+      const centerX = Math.round(halfW / 2);
+      const nameBoundaryX = Math.round(halfW * 0.40);
+      const nameMaxWidth = rightX - nameBoundaryX;
+      const taglineMaxWidth = centerX - leftX;
+
+      try { (ctx as any).wordSpacing = `${Math.round(-3 * scale)}px`; } catch {}
+
+      const drawWrappedText = (
+        text: string,
+        baseY: number,
+        maxW: number,
+        baseFontSize: number,
+        weight: string,
+        color: string,
+        align: CanvasTextAlign,
+        anchorX: number,
+      ) => {
+        ctx.fillStyle = color;
+        ctx.textAlign = align;
+        ctx.textBaseline = 'middle';
+        let fontSize = Math.round(baseFontSize * scale);
+        ctx.font = `${weight} ${fontSize}px ${fontFamily}`;
+        const lineGap = Math.round(fontSize * 0.85);
+
+        if (ctx.measureText(text).width <= maxW) {
+          ctx.fillText(text, anchorX, baseY);
+          return;
+        }
+
+        const spaceIdx = text.indexOf(' ');
+        if (spaceIdx !== -1) {
+          let bestSplit = -1;
+          for (let i = text.length - 1; i >= 0; i--) {
+            if (text[i] === ' ') {
+              const line1 = text.substring(0, i);
+              if (ctx.measureText(line1).width <= maxW) {
+                bestSplit = i;
+                break;
+              }
+            }
+          }
+          if (bestSplit === -1) {
+            bestSplit = spaceIdx;
+          }
+          const line1 = text.substring(0, bestSplit);
+          const line2 = text.substring(bestSplit + 1);
+
+          const line1W = ctx.measureText(line1).width;
+          const line2W = ctx.measureText(line2).width;
+          const maxLineW = Math.max(line1W, line2W);
+
+          if (maxLineW <= maxW) {
+            ctx.fillText(line1, anchorX, baseY - lineGap);
+            ctx.fillText(line2, anchorX, baseY);
+            return;
+          }
+
+          while (maxW > 0 && fontSize > 14) {
+            fontSize -= 1;
+            ctx.font = `${weight} ${fontSize}px ${fontFamily}`;
+            const l1 = ctx.measureText(line1).width;
+            const l2 = ctx.measureText(line2).width;
+            if (l1 <= maxW && l2 <= maxW) {
+              const shrunkGap = Math.round(fontSize * 0.85);
+              ctx.fillText(line1, anchorX, baseY - shrunkGap);
+              ctx.fillText(line2, anchorX, baseY);
+              return;
+            }
+          }
+          const fallbackGap = Math.round(fontSize * 0.85);
+          ctx.fillText(line1, anchorX, baseY - fallbackGap);
+          ctx.fillText(line2, anchorX, baseY);
+          return;
+        }
+
+        while (ctx.measureText(text).width > maxW && fontSize > 14) {
+          fontSize -= 1;
+          ctx.font = `${weight} ${fontSize}px ${fontFamily}`;
+        }
+        ctx.fillText(text, anchorX, baseY);
+      };
 
       if (name) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `600 ${Math.round(52 * scale)}px "JetBrains Mono", monospace`;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(name.toUpperCase(), rightX, nameY);
+        drawWrappedText(
+          name.toUpperCase(),
+          nameY,
+          nameMaxWidth,
+          52,
+          '600',
+          '#ffffff',
+          'right',
+          rightX,
+        );
       }
 
       if (track) {
+        const isProductManager = track.toLowerCase() === 'product manager';
+        const baseFontSize = isProductManager ? 25 : 30;
         ctx.fillStyle = '#cccccc';
-        ctx.font = `400 ${Math.round(30 * scale)}px "JetBrains Mono", monospace`;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
+        const fontSize = Math.round(baseFontSize * scale);
+        ctx.font = `400 ${fontSize}px ${fontFamily}`;
         ctx.fillText(track.toUpperCase(), rightX, nameY + Math.round(48 * scale));
       }
 
       if (tagline) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `400 ${Math.round(30 * scale)}px "JetBrains Mono", monospace`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(tagline, leftX, nameY + Math.round(48 * scale));
+        drawWrappedText(
+          tagline,
+          nameY + Math.round(48 * scale),
+          taglineMaxWidth,
+          30,
+          '400',
+          '#ffffff',
+          'left',
+          leftX,
+        );
       }
 
       const tex = new THREE.CanvasTexture(offscreen);
@@ -358,7 +465,15 @@ function Band({
 
       const elapsed = (Date.now() - spawnTime.current) / 1000;
 
-      if (videoSpin && !dragged && elapsed > 3.0) {
+      if (captureBack) {
+        const backQuat = new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0), Math.PI
+        );
+        cardBody.current.setNextKinematicTranslation(cardBody.current.translation());
+        cardBody.current.setNextKinematicRotation({
+          x: backQuat.x, y: backQuat.y, z: backQuat.z, w: backQuat.w,
+        });
+      } else if (videoSpin && !dragged && elapsed > 3.0) {
         const spinElapsed = elapsed - 3.0;
         const spinDuration = 5.0;
         if (spinElapsed < spinDuration) {
@@ -376,15 +491,6 @@ function Band({
             z: angularVelocity.z,
           });
         }
-      } else if (mouseFollow && !dragged && elapsed > 2.0) {
-        const targetAngle = state.pointer.x * Math.PI * 0.25;
-        const angleDiff = (cardRotation.y - targetAngle) * 0.15;
-        const clampedDiff = Math.max(-0.6, Math.min(0.6, angleDiff));
-        cardBody.current.setAngvel({
-          x: angularVelocity.x,
-          y: angularVelocity.y - clampedDiff,
-          z: angularVelocity.z,
-        });
       } else if (!dragged) {
         cardBody.current.setAngvel({
           x: angularVelocity.x,
@@ -435,7 +541,7 @@ function Band({
           ref={cardBody}
           {...physicsBodyProps}
           type={
-            dragged
+            (dragged || captureBack)
               ? ('kinematicPosition' as RigidBodyProps['type'])
               : ('dynamic' as RigidBodyProps['type'])
           }
