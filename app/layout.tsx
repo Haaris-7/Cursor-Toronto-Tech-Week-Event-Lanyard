@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { HeroHeader } from "@/components/header";
 import FooterSection from "@/components/footer";
@@ -61,6 +62,7 @@ export default function RootLayout({
         <main className="flex-1 min-h-0 flex flex-col overflow-x-hidden">{children}</main>
         <FooterSection />
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
