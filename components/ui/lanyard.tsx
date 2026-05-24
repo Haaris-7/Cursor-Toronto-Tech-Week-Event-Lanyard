@@ -96,6 +96,7 @@ export default function Lanyard({
             videoSpin={videoSpin}
             recording={recording}
             captureBack={captureBack}
+            physicsReady={physicsReady}
           />
         </Physics>
         <Environment blur={0.75}>
@@ -141,6 +142,7 @@ interface BandProps {
   videoSpin?: boolean;
   recording?: boolean;
   captureBack?: boolean;
+  physicsReady?: boolean;
 }
 
 function Band({
@@ -151,6 +153,7 @@ function Band({
   videoSpin = false,
   recording = false,
   captureBack = false,
+  physicsReady = true,
 }: BandProps) {
   const bandMesh = useRef<any>(null);
   const fixedBody = useRef<any>(null);
@@ -408,6 +411,8 @@ function Band({
   }, [hovered, dragged]);
 
   useFrame((state, delta) => {
+    if (!physicsReady) return;
+
     if (dragged && typeof dragged !== 'boolean') {
       targetPos
         .set(state.pointer.x, state.pointer.y, 0.5)
@@ -449,8 +454,12 @@ function Band({
       curve.points[2].copy(ropeSegment1.current.lerped);
       curve.points[3].copy(fixedPos);
 
-      angularVelocity.copy(cardBody.current.angvel());
-      cardRotation.copy(cardBody.current.rotation());
+      const rawAngvel = cardBody.current.angvel();
+      const rawRotation = cardBody.current.rotation();
+      if (isNaN(rawAngvel.x) || isNaN(rawAngvel.y) || isNaN(rawAngvel.z) ||
+          isNaN(rawRotation.x) || isNaN(rawRotation.y) || isNaN(rawRotation.z) || isNaN(rawRotation.w)) return;
+      angularVelocity.copy(rawAngvel);
+      cardRotation.copy(rawRotation);
 
       const twistOffset = Math.sin(cardRotation.y) * BAND_TWIST_STRENGTH;
       curve.points[0].z += twistOffset;
@@ -555,6 +564,11 @@ function Band({
             onPointerUp={(e: any) => {
               if (recording) return;
               e.target.releasePointerCapture(e.pointerId);
+              setDragged(false);
+            }}
+            onPointerCancel={(e: any) => {
+              if (recording) return;
+              try { e.target.releasePointerCapture(e.pointerId); } catch {}
               setDragged(false);
             }}
             onPointerDown={(e: any) => {

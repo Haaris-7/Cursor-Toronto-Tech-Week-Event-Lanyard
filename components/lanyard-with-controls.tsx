@@ -10,7 +10,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Download, Video, Link as LinkIcon, Check, Loader2, ChevronDown, RotateCcw } from "lucide-react";
+import { Download, Video, ImagePlay, Link as LinkIcon, Check, Loader2, ChevronDown, RotateCcw } from "lucide-react";
 import { parseParams, serializeParams, TRACKS, type Track } from "@/lib/lanyard-params";
 import {
   getCanonicalUrl,
@@ -95,11 +95,13 @@ const MAX_CHARS = 32;
 
 interface LanyardWithControlsProps {
   position?: [number, number, number];
+  fov?: number;
   containerClassName?: string;
 }
 
 export default function LanyardWithControls({
   position = [0, 0, 11],
+  fov,
   containerClassName,
 }: LanyardWithControlsProps) {
   const router = useRouter();
@@ -120,6 +122,7 @@ export default function LanyardWithControls({
 
   const [resetKey, setResetKey] = useState(0);
   const [recording, setRecording] = useState(false);
+  const [gifEncoding, setGifEncoding] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [videoSpin, setVideoSpin] = useState(false);
@@ -127,7 +130,7 @@ export default function LanyardWithControls({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const isBusy = recording || countdown !== null || captureBack;
+  const isBusy = recording || gifEncoding || countdown !== null || captureBack;
 
   const syncUrl = useCallback(
     (f: typeof fields) => {
@@ -230,6 +233,118 @@ export default function LanyardWithControls({
     }
   }, [isBusy, appliedFields.name]);
 
+  const handleGif = useCallback(async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || isBusy) return;
+
+    const mime = pickMime();
+    if (!mime) {
+      alert("Video recording is not supported in this browser.");
+      return;
+    }
+
+    setCountdown(3);
+    await new Promise((r) => setTimeout(r, 1000));
+    setCountdown(2);
+    await new Promise((r) => setTimeout(r, 1000));
+    setCountdown(1);
+    await new Promise((r) => setTimeout(r, 1000));
+    setCountdown(null);
+
+    setRecording(true);
+    setVideoSpin(true);
+
+    try {
+      setResetKey((prev) => prev + 1);
+      await new Promise((r) => setTimeout(r, 200));
+
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      const done = new Promise<Blob>((resolve) => {
+        recorder.onstop = () => resolve(new Blob(chunks, { type: mime }));
+      });
+
+      recorder.start();
+
+      const prefersReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      const duration = prefersReducedMotion ? 4000 : 11000;
+      await new Promise((r) => setTimeout(r, duration));
+      recorder.stop();
+
+      const videoBlob = await done;
+
+      setRecording(false);
+      setVideoSpin(false);
+      setGifEncoding(true);
+
+      const videoUrl = URL.createObjectURL(videoBlob);
+      const video = document.createElement("video");
+      video.src = videoUrl;
+      video.muted = true;
+      video.playsInline = true;
+
+      await new Promise<void>((resolve, reject) => {
+        video.onloadeddata = () => resolve();
+        video.onerror = () => reject(new Error("Failed to load video"));
+      });
+
+      const gifWidth = 480;
+      const gifHeight = Math.round(
+        gifWidth * (video.videoHeight / video.videoWidth)
+      );
+      const offscreen = document.createElement("canvas");
+      offscreen.width = gifWidth;
+      offscreen.height = gifHeight;
+      const ctx = offscreen.getContext("2d");
+      if (!ctx) return;
+
+      const fps = 15;
+      const frameInterval = 1000 / fps;
+      const videoDuration = video.duration * 1000;
+      const totalFrames = Math.floor(videoDuration / frameInterval);
+      const frames: Array<{ data: Uint8ClampedArray; delay: number }> = [];
+
+      for (let i = 0; i < totalFrames; i++) {
+        video.currentTime = (i * frameInterval) / 1000;
+        await new Promise<void>((resolve) => {
+          video.onseeked = () => resolve();
+        });
+        ctx.drawImage(video, 0, 0, gifWidth, gifHeight);
+        const imageData = ctx.getImageData(0, 0, gifWidth, gifHeight);
+        frames.push({ data: imageData.data, delay: frameInterval });
+      }
+
+      URL.revokeObjectURL(videoUrl);
+
+      const { encode } = await import("modern-gif");
+      const output = await encode({
+        width: gifWidth,
+        height: gifHeight,
+        frames,
+      });
+
+      const blob = new Blob([output], { type: "image/gif" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cursor-ttw-lanyard-${makeSlug(appliedFields.name)}.gif`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setRecording(false);
+      setVideoSpin(false);
+      setGifEncoding(false);
+    }
+  }, [isBusy, appliedFields.name]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleApply();
   };
@@ -311,38 +426,50 @@ export default function LanyardWithControls({
     "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-[#2a2a2f] font-mono text-xs text-[#8a8a92] transition-colors hover:border-white/20 hover:text-[#ededf0] disabled:opacity-50";
 
   return (
-    <div className="relative h-full w-full">
-      <Lanyard
-        position={position}
-        containerClassName={containerClassName}
-        canvasRef={canvasRef}
-        textFields={appliedFields}
-        resetKey={resetKey}
-        videoSpin={videoSpin}
-        recording={isBusy}
-        captureBack={captureBack}
-      />
+    <div className="relative flex flex-col lg:block lg:h-full lg:w-full">
+      <div className="relative h-[55vh] min-h-[380px] w-full mt-14 touch-none lg:absolute lg:inset-0 lg:h-auto lg:min-h-0 lg:mt-0">
+        <Lanyard
+          position={position}
+          fov={fov}
+          containerClassName="absolute inset-0 select-none"
+          canvasRef={canvasRef}
+          textFields={appliedFields}
+          resetKey={resetKey}
+          videoSpin={videoSpin}
+          recording={isBusy}
+          captureBack={captureBack}
+        />
 
-      {countdown !== null && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center">
-          <div className="flex h-28 w-28 items-center justify-center rounded-2xl bg-black/60 backdrop-blur-md">
-            <span className="font-mono text-6xl font-bold text-white tabular-nums">
-              {countdown}
-            </span>
+        {countdown !== null && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center">
+            <div className="flex h-28 w-28 items-center justify-center rounded-2xl bg-black/60 backdrop-blur-md">
+              <span className="font-mono text-6xl font-bold text-white tabular-nums">
+                {countdown}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {recording && (
-        <div className="absolute left-1/2 top-6 z-30 -translate-x-1/2">
-          <div className="flex items-center gap-2 rounded-full bg-red-500/20 px-4 py-1.5 backdrop-blur-md">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-            <span className="font-mono text-xs font-medium text-red-400">Recording</span>
+        {(recording || gifEncoding) && (
+          <div className="absolute left-1/2 top-6 z-30 -translate-x-1/2">
+            <div className="flex items-center gap-2 rounded-full bg-red-500/20 px-4 py-1.5 backdrop-blur-md">
+              {gifEncoding ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin text-white" />
+                  <span className="font-mono text-xs font-medium text-white">Encoding GIF...</span>
+                </>
+              ) : (
+                <>
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                  <span className="font-mono text-xs font-medium text-red-400">Recording</span>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="absolute bottom-4 left-4 right-4 z-20 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[320px]">
+      <div className="relative z-20 p-4 lg:absolute lg:bottom-6 lg:right-6 lg:w-[320px] lg:p-0">
         <div className="rounded-xl border border-[#2a2a2f]/60 bg-[#131315]/80 p-4 backdrop-blur-md">
           <label className="mb-3 block font-mono text-xs font-medium uppercase tracking-widest text-[#8a8a92]">
             Design your lanyard
@@ -467,30 +594,62 @@ export default function LanyardWithControls({
                   </Tooltip>
                 </div>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={handleRecord}
-                      disabled={isBusy}
-                      className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-[#2a2a2f] font-mono text-xs text-[#8a8a92] transition-colors hover:border-white/20 hover:text-[#ededf0] disabled:opacity-50"
-                    >
-                      {recording ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>Recording...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Video className="h-3.5 w-3.5" />
-                          <span>Record Video</span>
-                        </>
-                      )}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>Record entrance animation with 360 spin</p>
-                  </TooltipContent>
-                </Tooltip>
+                <div className="flex gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={handleRecord}
+                        disabled={isBusy}
+                        className={actionBtnClass}
+                      >
+                        {recording && !gifEncoding ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Recording...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Video className="h-3.5 w-3.5" />
+                            <span>Video</span>
+                          </>
+                        )}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>Record entrance animation as video</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={handleGif}
+                        disabled={isBusy}
+                        className={actionBtnClass}
+                      >
+                        {gifEncoding ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Encoding...</span>
+                          </>
+                        ) : recording ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Recording...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ImagePlay className="h-3.5 w-3.5" />
+                            <span>GIF</span>
+                          </>
+                        )}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>Record entrance animation as GIF</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
 
                 <div className="flex items-center gap-2 border-t border-[#2a2a2f]/40 pt-3 mt-1">
                   <span className="font-mono text-[10px] uppercase tracking-widest text-[#5a5a62]">
